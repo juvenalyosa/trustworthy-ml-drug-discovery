@@ -26,6 +26,7 @@ The notebook is 57 cells and 15 figures across 15 parts, ending with a **worksho
 
 | Part | Subject |
 |---|---|
+| Orientation | What machine learning is in one page: the loss function, how a molecule becomes a row of numbers, the four models we fit and how each works |
 | 1–2 | When ML is the right tool; pIC50 and the thermodynamics behind the log scale |
 | 3–4 | Curating assay data; computing the performance ceiling *before* training |
 | 5–6 | Molecular fingerprints and Tanimoto similarity; data splitting and leakage |

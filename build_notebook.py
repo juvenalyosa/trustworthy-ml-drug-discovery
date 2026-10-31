@@ -47,6 +47,9 @@ practical goal.
 
 ### What you will learn
 
+A one-page orientation comes first — what machine learning is, which four models we will fit
+and how each one works, and what makes these data worth modelling at all. Then:
+
 1. **When machine learning is the right tool here, and when it is not**
 2. **Why potency is modeled on a logarithmic scale** — and the thermodynamics behind it
 3. **How to curate assay data** without silently corrupting it
@@ -265,6 +268,213 @@ def load_dataset():
 
 df, FP, IS_REAL = load_dataset()
 df.head(3)
+''')
+
+# ══════════════════════════════════════════════════════════════ ORIENTATION
+md(r'''
+---
+## Orientation — what machine learning is, and what we are about to build
+
+One page, before the course proper. Everything here comes back in detail later; this is the map.
+
+### 1. The idea
+
+In ordinary programming you write the rules and the computer applies them. To predict potency
+that way you would have to write down the physics of a molecule binding a protein. That physics
+exists — and the calculations that do it properly take hours per compound and still land within
+about a factor of ten.
+
+Supervised learning reverses the arrangement: **you supply examples with the answer attached,
+and the computer fits the rules.** You have $n$ examples $(\mathbf{x}_i, y_i)$ and you want a
+function $f$ such that $f(\mathbf{x}) \approx y$ — not on these examples, but on molecules you
+have never measured. Fitting means picking $f$ out of some family $\mathcal{F}$ to make a
+**loss** small:
+
+$$\hat f \;=\; \arg\min_{f \in \mathcal{F}} \; \underbrace{\frac{1}{n}\sum_{i=1}^{n} L\big(y_i,\, f(\mathbf{x}_i)\big)}_{\text{how wrong, on data you have}} \;+\; \underbrace{\lambda\,\Omega(f)}_{\text{penalty for complexity}}$$
+
+Every consequential decision in this notebook is one of the four symbols in that expression:
+
+| Symbol | The choice it stands for | Where we make it |
+|---|---|---|
+| $\mathbf{x}$ | how a molecule becomes numbers | Part 5 |
+| $\mathcal{F}$ | which family of functions — lines, trees, networks | Parts 7–8 |
+| $L$ | what counts as being wrong | Part 9 |
+| $\lambda\,\Omega$ | how hard we stop the model from memorising | Part 8 |
+
+And notice what the sum runs over: the data you **have**. What you actually care about is the
+data you don't. That gap is the whole subject — a model that has memorised 18,145 answers scores
+beautifully and predicts nothing. Part 6 is about measuring the gap honestly, and it is the
+most important part of the notebook.
+
+### 2. What $\mathbf{x}$ and $y$ are here
+
+| | What it holds | Columns |
+|---|---|---|
+| $y$ | $\mathrm{pIC_{50}}$ — one number: how little drug is needed to inhibit by half | 1 |
+| $\mathbf{x}$ | a fingerprint of the molecule's substructures, plus which protein variant and assay it was measured in | ~2,080 |
+
+The model never sees a molecule. It sees a row of numbers. Anything chemistry means has to
+survive that translation — which is why Part 5 exists and why the fingerprint is not a detail.
+
+### 3. The four models we will fit, and how each one works
+
+We fit them in this order on purpose: each one tests whether the next one's extra complexity
+is actually buying anything.
+
+| Model | Mechanism | What it can express | Why we fit it |
+|---|---|---|---|
+| **Mean predictor** | ignores $\mathbf{x}$, always predicts $\bar y$ | nothing | the floor: $R^2 = 0$ by construction. Any model that fails to beat it is broken |
+| **Nearest neighbours** | find the most structurally similar measured molecules, average their potency | "similar molecule, similar potency" and nothing more | tests whether the problem needs a model at all, or just a lookup |
+| **Ridge regression** | one weight per column: $\hat y = \mathbf{w}\cdot\mathbf{x} + b$, with weights shrunk toward zero | each substructure adds a fixed amount of potency, independent of the rest | it is linear and inspectable; if it ties with boosting, boosting is not earning its keep |
+| **Gradient boosting** | hundreds of shallow decision trees, each one fitted to the errors the previous ones left | *interactions*: this substituent helps, but only on that scaffold, and only against that variant | our final model |
+
+Ridge minimises squared error plus a penalty that keeps the weights small:
+
+$$\hat{\mathbf{w}} = \arg\min_{\mathbf{w}} \; \lVert \mathbf{y} - X\mathbf{w} \rVert^2 \;+\; \alpha \lVert \mathbf{w} \rVert^2$$
+
+Boosting builds its prediction as a sum, one small correction at a time:
+
+$$F_m(\mathbf{x}) \;=\; F_{m-1}(\mathbf{x}) \;+\; \nu\, h_m(\mathbf{x}), \qquad h_m \;\approx\; -\frac{\partial L}{\partial F_{m-1}}$$
+
+where $h_m$ is a small tree and $\nu \approx 0.06$ is the learning rate. Each tree asks what the
+committee so far is still getting wrong, and corrects a sliver of it. Part 8 derives this from
+the loss function and shows the first four trees doing it.
+
+**Why boosting ends up winning on these data.** Structure–activity relationships are full of
+conditions: a fluorine at one position helps on a quinazoline core and does nothing on a
+pyrimidine; a bulky group is tolerated by wild-type EGFR and blocked by the T790M mutant.
+A linear model has to assign each feature one fixed effect, so it averages those cases
+together and loses them. A decision tree splits on one column and then asks a *different*
+question down each branch, so conditional effects cost it nothing. Our features are also
+thousands of sparse, correlated binary columns — the regime trees handle well and distance-based
+methods handle badly.
+
+### 4. Why run machine learning on *these* data at all
+
+Four conditions have to hold before this is the right tool, and here they do:
+
+- **Enough examples.** 18,145 measurements over 13,427 molecules. Below a few hundred there is
+  nothing to learn and chemical intuition wins.
+- **The decision is a ranking, not a number.** Nobody needs the exact $\mathrm{IC_{50}}$ of an
+  unmade compound. They need to know which twenty of two thousand to synthesise first — and
+  ranking survives an error that would make a point prediction useless.
+- **The alternatives cost more.** Free-energy simulation: hours to days per compound, and it
+  needs a crystal structure. Docking: fast, and we will *prove* in Part 10 that on these data
+  it carries no usable signal. Synthesis and assay: weeks, and real money.
+- **The measurements are already paid for.** 1,371 published papers, 1989–2024. The data exists
+  whether or not anyone models it.
+
+The honest version of the claim is narrow, and it is the one to keep: a model trained here
+predicts the potency of molecules **resembling ones already measured**, against protein
+variants **it has already seen**, to within roughly a factor of 5–10. That is enough to triage
+a synthesis queue, and not enough to replace an experiment. Part 1 makes the case properly;
+Part 6 shows what happens when you forget the two words in bold.
+''')
+
+code(r'''
+# ── How supervised learning actually runs: the training loop, and the part that is honest ──
+fig, ax = plt.subplots(figsize=(11.4, 4.9))
+ax.set(xlim=(0, 100), ylim=(0, 42), xticks=[], yticks=[]); ax.grid(False)
+for s in ax.spines.values():
+    s.set_visible(False)
+
+
+def box(x, y, w, h, label, fc="none", ec=GRID, tc=INK, fs=9.5, bold=False, lw=1.3):
+    ax.add_patch(Rectangle((x, y), w, h, facecolor=fc, edgecolor=ec, lw=lw,
+                           zorder=2, joinstyle="round"))
+    ax.text(x + w / 2, y + h / 2, label, ha="center", va="center", fontsize=fs,
+            color=tc, zorder=3, linespacing=1.45,
+            fontweight="bold" if bold else "normal")
+
+
+def arrow(x1, y1, x2, y2, color=INK3, lw=1.5, style="-|>", rad=0.0):
+    ax.add_patch(FancyArrowPatch((x1, y1), (x2, y2), arrowstyle=style, color=color,
+                                 lw=lw, mutation_scale=13, zorder=1,
+                                 connectionstyle=f"arc3,rad={rad}"))
+
+
+# ---------- training, top row ----------
+ax.text(1, 39.4, "TRAINING  —  on the molecules you have measured", fontsize=10,
+        color=BLUE, fontweight="bold")
+box(1, 28, 17, 8.5, "measured\nmolecules\n+ their potency", fc="#eaf1fb", ec=BLUE)
+box(23, 28, 15, 8.5, "fingerprint\n$\\mathbf{x}$", fc=SURFACE, ec=GRID)
+box(43, 28, 15, 8.5, "model  $f$", fc=SURFACE, ec=BLUE, lw=2.0, bold=True, fs=11)
+box(63, 28, 14, 8.5, "prediction\n$\\hat y$", fc=SURFACE, ec=GRID)
+box(82, 28, 16, 8.5, "loss  $L(y,\\hat y)$\nhow wrong", fc="#fdeee7", ec=ORANGE)
+for x1, x2 in ((18, 23), (38, 43), (58, 63), (77, 82)):
+    arrow(x1, 32.2, x2, 32.2)
+# feedback: routed BELOW the row so it crosses nothing
+ax.plot([90, 90, 50.5], [28, 24.6, 24.6], color=ORANGE, lw=1.7,
+        solid_joinstyle="round", zorder=1)
+arrow(50.5, 24.6, 50.5, 27.9, color=ORANGE, lw=1.7)
+ax.text(70.5, 22.4, "adjust $f$ to make the loss smaller  —  repeat a few hundred times",
+        fontsize=9.5, color=ORANGE, ha="center", va="top", style="italic")
+
+# ---------- divider ----------
+ax.plot([1, 98], [18.2, 18.2], color=GRID, lw=1.2)
+
+# ---------- evaluation, bottom row ----------
+ax.text(1, 14.9, "EVALUATION  —  on molecules the model never saw", fontsize=10,
+        color=AQUA, fontweight="bold")
+box(1, 3.4, 17, 8.5, "held-out\nmolecules", fc="#e8f7f1", ec=AQUA)
+box(23, 3.4, 15, 8.5, "fingerprint\n$\\mathbf{x}$", fc=SURFACE, ec=GRID)
+box(43, 3.4, 15, 8.5, "model $f$\nfrozen", fc=SURFACE, ec=GRID, fs=9.5)
+box(63, 3.4, 14, 8.5, "prediction\n$\\hat y$", fc=SURFACE, ec=GRID)
+box(82, 3.4, 16, 8.5, "the only score\nworth quoting", fc="#e8f7f1", ec=AQUA, bold=True)
+for x1, x2 in ((18, 23), (38, 43), (58, 63), (77, 82)):
+    arrow(x1, 7.6, x2, 7.6)
+
+fig.suptitle("Supervised learning: the loop, and the one measurement that is not self-flattery",
+             x=.007, ha="left", fontsize=12, fontweight="bold", color=INK)
+plt.tight_layout(rect=(0, 0, 1, .94)); plt.show()
+''')
+
+code(r'''
+# ── What one row of the model's input actually contains ──
+n_fp = FP.shape[1]
+n_var = df.variant_id.nunique()
+n_assay = df.assay_category.nunique()
+blocks = [("molecular fingerprint\n(which substructures)", n_fp, BLUE),
+          ("protein variant\n(target + mutations)", n_var, ORANGE),
+          ("assay type", n_assay, AQUA)]
+total = sum(b[1] for b in blocks)
+
+fig, axes = plt.subplots(1, 2, figsize=(11.4, 4.1),
+                         gridspec_kw={"width_ratios": [1.45, 1]})
+
+ax = axes[0]
+left = 0
+for name, n, col in blocks:
+    ax.barh(0, n, left=left, height=.52, color=col, lw=0)
+    left += n + total * 0.004          # 2px-equivalent surface gap between segments
+ax.set(xlim=(0, total), ylim=(-.75, .95), yticks=[],
+       xlabel="columns of $\\mathbf{x}$", title="One row of $\\mathbf{x}$, drawn to scale")
+ax.spines["left"].set_visible(False)
+clean(ax, grid="x")
+ax.text(n_fp / 2, 0, f"{n_fp:,} columns — {n_fp/total:.1%}", ha="center", va="center",
+        fontsize=10, color="white", fontweight="bold")
+ax.annotate(f"the protein: {n_var + n_assay} columns — {(n_var+n_assay)/total:.1%}",
+            xy=(total - (n_var + n_assay) / 2, .27), xytext=(total * .80, .70),
+            fontsize=9.5, color=INK2, ha="center",
+            arrowprops=dict(arrowstyle="-", color=INK3, lw=1.1))
+for i, (name, n, col) in enumerate(blocks):
+    ax.scatter([], [], s=70, marker="s", c=col, label=name.replace("\n", " "))
+ax.legend(loc="upper left", markerscale=1, handletextpad=.7, labelspacing=.8)
+note(ax, "Almost the whole input describes the ligand.\nThe protein gets a few dozen columns — "
+         "which is\nexactly why Part 10 finds mutations hardest.", xy=(0.015, 0.02), ha="left")
+
+ax = axes[1]
+on = FP.sum(axis=1)
+ax.hist(on, bins=40, color=BLUE, lw=0)
+ax.axvline(np.median(on), color=ORANGE, lw=2.0)
+ax.set(xlabel="fingerprint bits set to 1, per molecule", ylabel="measurements",
+       title="…and it is nearly empty")
+clean(ax)
+ax.annotate(f"median {int(np.median(on))} of {n_fp:,}\n= {np.median(on)/n_fp:.1%} switched on",
+            xy=(np.median(on), ax.get_ylim()[1] * .99), xytext=(0.03, 0.88),
+            textcoords="axes fraction", fontsize=9.5, color=ORANGE, va="top", ha="left",
+            arrowprops=dict(arrowstyle="-", color=ORANGE, lw=1.1))
+plt.tight_layout(); plt.show()
 ''')
 
 # ════════════════════════════════════════════════════════════════════ PART 1
