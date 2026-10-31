@@ -1,0 +1,26 @@
+Filas de entrada: 25197
+Relación exacta (= o ~): 25197 -> 20694 (-4503)
+SMILES válidos: 20694 -> 20694 (-0)
+Convertidas de ug/mL a nM: 72
+Unidades convertibles y valor > 0: 20694 -> 20688 (-6)
+pIC50 en [3.0, 12.0]: 20688 -> 20643 (-45)
+Al menos una pose válida: 20643 -> 20642 (-1)
+Filas con poses descartadas (>= 0): 75
+Agregación de réplicas (filas -> grupos): 20642 -> 18380 (-2262)
+Réplicas con std pIC50 <= 1.0: 18380 -> 18145 (-235)
+Scaffolds de Murcko: 4855
+
+Dataset final: 18145 filas, 13427 estructuras únicas, 60 columnas
+assay_category  biochemical  cellular  other
+target                                      
+ALK                    1668       666    311
+BRAF                   2730      1087   1050
+EGFR                   5812      3061   1760
+
+split   test  train  valid
+target                    
+ALK      358   1961    326
+BRAF     412   4063    392
+EGFR    1045   8492   1096
+
+Filas por cv_fold: {0: 3629, 1: 3629, 2: 3629, 3: 3629, 4: 3629}
